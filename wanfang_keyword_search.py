@@ -20,31 +20,31 @@ session.mount("http://", adapter)
 session.mount("https://", adapter)
 
 def get_search(search_word, page_num=1, page_size=50):
-    url = 
+    url =
     headers = {
-        'Host': 'msearch.wanfangdata.com.cn',
-        'User-Agent': 'okhttp/3.3.1',
-        'Accept': 'application/json, text/plain, */*',
-        'Connection': 'keep-alive',
-        'Referer': 'https://msearch.wanfangdata.com.cn/',
+        "Host": "msearch.wanfangdata.com.cn",
+        "User-Agent": "okhttp/3.3.1",
+        "Accept": "application/json, text/plain, */*",
+        "Connection": "keep-alive",
+        "Referer": "https://msearch.wanfangdata.com.cn/",
     }
     params = {
-        'searchWord': search_word,
-        'pageNum': page_num,
-        'pageSize': page_size,
-        'sort': '["相关度:desc"]',
-        'resultSearch': '[]',
-        'entRecFlag': 'false',
-        'hasFullText': 'false',
-        'isOAResource': 'false',
-        'advancedSearchFlag': 'true'
+        "searchWord": search_word,
+        "pageNum": page_num,
+        "pageSize": page_size,
+        "sort": '["相关度:desc"]',
+        "resultSearch": "[]",
+        "entRecFlag": "false",
+        "hasFullText": "false",
+        "isOAResource": "false",
+        "advancedSearchFlag": "true",
     }
     try:
         resp = session.get(url, headers=headers, params=params, timeout=10, verify=False)
         if resp.status_code == 200:
             jd = resp.json()
-            total_count = jd.get('totalRow', 0)
-            data_list = jd.get('data', [])
+            total_count = jd.get("totalRow", 0)
+            data_list = jd.get("data", [])
             return total_count, data_list
         else:
             print(f"Request failed, status code={resp.status_code}")
@@ -55,58 +55,81 @@ def get_search(search_word, page_num=1, page_size=50):
     finally:
         time.sleep(2)
 
-def main():
-    search_query = '''
-    (
-      
-      )
-    )
-    '''
+def generate_search_queries(core_keyword, additional_keywords):
+    keyword_batches = []
+    for keyword in additional_keywords:
+        query = f"主题:({core_keyword} AND {keyword})"
+        keyword_batches.append(query)
+    return keyword_batches
 
-    page_size = 50
-    current_page = 1
+def main():
+    core_keyword = ""
+    additional_keywords = [
+        
+    ]
+
+    search_queries = generate_search_queries(core_keyword, additional_keywords)
+
+    fetched_article_ids = set()
     all_results = []
 
-    while True:
-        total_count, data_list = get_search(search_query, page_num=current_page, page_size=page_size)
-        if not data_list:
-            break
+    for search_query in search_queries:
+        page_size = 50
+        current_page = 1
+        total_count = 1
 
-        all_results.extend(data_list)
-        print(f"Page {current_page}, fetched {len(data_list)} entries, total {len(all_results)}/{total_count}")
-        
-        if len(all_results) >= total_count:
-            break
-        
-        current_page += 1
+        while current_page <= total_count:
+            total_count, data_list = get_search(search_query, page_num=current_page, page_size=page_size)
+            if not data_list:
+                break
 
-    final_results = []
-    for paper in all_results:
-        article_id = paper.get("article id", "").strip()
-        note = f"https://www.wanfangdata.com.cn/details/detail.do?_type=perio&id={article_id}"
-        abstract_text = paper.get("summary", "").strip()
-        original_date = paper.get("publishDate", "").strip()
+            for paper in data_list:
+                article_id = paper.get("article_id", "").strip()
+                
+                if article_id in fetched_article_ids:
+                    continue
+                
+                fetched_article_ids.add(article_id)
 
-        article_date = original_date if len(original_date) >= 4 and original_date[:4].isdigit() else ""
+                note = f"https://www.wanfangdata.com.cn/details/detail.do?_type=perio&id={article_id}"
+                abstract_text = paper.get("summary", "").strip()
+                title = paper.get("title", "").strip()
+                publish_year = paper.get("publish_year", "")
+                publish_year = str(publish_year) if isinstance(publish_year, int) else publish_year
+                article_date = f"{publish_year}" if len(publish_year) >= 4 and publish_year.isdigit() else ""
 
-        if article_id and note and abstract_text and article_date:
-            final_results.append({
-                "ID": article_id,
-                "Note": note,
-                "AbstractText": abstract_text,
-                "ArticleDate": article_date
-            })
+                json_content = {
+                    "Note": note,
+                    "item": search_query,
+                    "ArticleTitle": title,
+                    "AbstractText": abstract_text,
+                    "ArticleDate": article_date,
+                    "json_content": paper
+                }
 
-    print(f"\nFetched {len(all_results)} records, {len(final_results)} meet the conditions.")
+                if article_id and note and abstract_text and article_date:
+                    all_results.append(json_content)
 
-    csv_filename = "output.csv"
+            print(f"Page {current_page}, fetched {len(data_list)} entries, total {len(all_results)}/{total_count}")
+            current_page += 1
+
+    print(f"\nFetched {len(all_results)} records in total.")
+
+    csv_filename = "search_results_no_duplicates.csv"
     with open(csv_filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["ID", "Note", "AbstractText", "ArticleDate"])
-        for item in final_results:
-            writer.writerow([item["ID"], item["Note"], item["AbstractText"], item["ArticleDate"]])
+        writer.writerow(["Note", "Item", "ArticleTitle", "AbstractText", "ArticleDate", "json_content"])
+        for item in all_results:
+            writer.writerow([
+                item["Note"],
+                item["item"],
+                item["ArticleTitle"],
+                item["AbstractText"],
+                item["ArticleDate"],
+                str(item["json_content"])
+            ])
 
-    print(f"Records meeting the conditions have been written to {csv_filename}.")
+    print(f"Results saved locally to {csv_filename}.")
 
 if __name__ == "__main__":
     main()
