@@ -38,17 +38,22 @@ def check_url_with_browser_simulation(url):
         "Connection": "keep-alive",
     }
     try:
-        resp = requests.get(url, headers=headers, allow_redirects=True, timeout=10)
-        if resp.status_code != 200:
-            logging.info(f"Invalid link, status code: {resp.status_code} | {url}")
-            return False
-        if not resp.text.strip():
-            logging.info(f"Empty response: {url}")
-            return False
-        return True
+        response = requests.get(url, headers=headers, allow_redirects=True, timeout=10)
+        if response.status_code != 200:
+            logging.error(f"Request failed, status code: {response.status_code} URL: {url}")
+            return False, url
+        content = response.text
+        if "无法找到资源" in content or "无法查看本文献" in content:
+            logging.error(f"Invalid content: {url}")
+            return False, url
+        if not content.strip():
+            logging.error(f"Empty response: {url}")
+            return False, url
+        return True, url
     except requests.exceptions.RequestException as e:
-        logging.warning(f"Request error: {e} | {url}")
-        return False
+        logging.error(f"Request exception: {e} URL: {url}")
+        return False, url
+
 
 
 def setup_chrome_options(temp_dir):
