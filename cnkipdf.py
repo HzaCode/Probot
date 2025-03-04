@@ -43,31 +43,44 @@ def verify_pdf(file_path):
         return False
 
 def is_green_button_present(driver, threshold=0.8):
+    logging.info("Starting green button detection")
     try:
-        driver.save_screenshot("screenshot.png")
-        img = cv2.imread("screenshot.png")
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        lower_green = np.array([35, 50, 50])
-        upper_green = np.array([85, 255, 255])
-        mask = cv2.inRange(hsv, lower_green, upper_green)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if area > 30:
-                x, y, w, h = cv2.boundingRect(contour)
-                print(f"[{time.strftime('%H:%M:%S')}] Detected green button at ({x}, {y}, {w}, {h}) with area {area}")
-                logging.info(f"Detected green button at ({x}, {y}, {w}, {h}) with area {area}")
-                return True
-        print(f"[{time.strftime('%H:%M:%S')}] Green button not detected")
-        logging.info("Green button not detected")
+        screenshot_path = "screenshot.png"
+        max_scrolls = 5
+        scroll_increment = 500
+        total_height = driver.execute_script("return document.body.scrollHeight")
+        window_height = driver.execute_script("return window.innerHeight")
+        logging.debug(f"Page total height: {total_height}, Window height: {window_height}")
+        for i in range(max_scrolls):
+            scroll_position = i * scroll_increment
+            driver.execute_script(f"window.scrollTo(0, {scroll_position});")
+            logging.debug(f"Scrolled to position: {scroll_position} ({i+1}/{max_scrolls})")
+            time.sleep(1)
+            driver.save_screenshot(screenshot_path)
+            logging.debug(f"Screenshot saved: {screenshot_path} at position {scroll_position}")
+            img = cv2.imread(screenshot_path)
+            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            lower_green = np.array([35, 50, 50])
+            upper_green = np.array([85, 255, 255])
+            mask = cv2.inRange(hsv, lower_green, upper_green)
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area > 10:
+                    logging.info(f"Green button detected, area: {area} at position {scroll_position}")
+                    return True
+            if scroll_position + window_height >= total_height:
+                logging.debug(f"Reached page bottom: {scroll_position} + {window_height} >= {total_height}")
+                break
+        logging.info("No green button detected after all scroll attempts")
         return False
     except Exception as e:
-        print(f"[{time.strftime('%H:%M:%S')}] Error in image recognition: {str(e)}")
-        logging.error(f"Error in image recognition: {str(e)}")
+        logging.error(f"Error detecting green button: {str(e)}")
         return False
     finally:
-        if os.path.exists("screenshot.png"):
-            os.remove("screenshot.png")
+        if os.path.exists(screenshot_path):
+            os.remove(screenshot_path)
+            logging.debug("Screenshot file cleaned up")
 
 def check_existing_file(target_dir, output_filename):
     target_path = os.path.join(target_dir, output_filename)
